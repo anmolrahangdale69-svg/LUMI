@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -27,9 +29,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.DpadAndTrimControls
 import com.example.ui.components.LumiHeader
+import com.example.ui.components.RobotPairingDialog
 import com.example.ui.components.TelemetryLogViewer
 import com.example.ui.components.VectorHud
 import com.example.ui.components.VirtualJoystick
+import com.example.ui.components.WorldwideCloudBar
 import com.example.ui.theme.LumiBgDark
 
 @Composable
@@ -38,13 +42,16 @@ fun LumiCockpitScreen(
     modifier: Modifier = Modifier
 ) {
     val robotId by viewModel.robotId.collectAsStateWithLifecycle()
+    val savedRobots by viewModel.savedRobots.collectAsStateWithLifecycle()
     val connectionStatus by viewModel.connectionStatus.collectAsStateWithLifecycle()
     val latencyMs by viewModel.latencyMs.collectAsStateWithLifecycle()
+    val robotStatus by viewModel.robotStatus.collectAsStateWithLifecycle()
     val isSoundMuted by viewModel.isSoundMuted.collectAsStateWithLifecycle()
     val speedLimit by viewModel.speedLimitPercent.collectAsStateWithLifecycle()
     val driveVector by viewModel.driveVector.collectAsStateWithLifecycle()
     val telemetryLogs by viewModel.telemetryLogs.collectAsStateWithLifecycle()
 
+    var showPairingDialog by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
     Scaffold(
@@ -93,14 +100,22 @@ fun LumiCockpitScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 2. Vector HUD Readout
+                // 2. Worldwide Cloud Link & Robot Telemetry Bar
+                WorldwideCloudBar(
+                    robotId = robotId,
+                    robotStatus = robotStatus,
+                    onOpenPairing = { showPairingDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // 3. Vector HUD Readout
                 VectorHud(
                     vector = driveVector,
                     robotId = robotId,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 3. Central Stage: Dual-Ring Virtual Joystick
+                // 4. Central Stage: Dual-Ring Virtual Joystick
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -115,7 +130,7 @@ fun LumiCockpitScreen(
                     )
                 }
 
-                // 4. D-Pad Directional Fallback & Trim Speed Controls
+                // 5. D-Pad Directional Fallback & Trim Speed Controls
                 DpadAndTrimControls(
                     selectedTrim = speedLimit,
                     onTrimSelect = viewModel::setSpeedLimit,
@@ -124,13 +139,24 @@ fun LumiCockpitScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 5. Live MQTT Telemetry Buffer Viewer
+                // 6. Live MQTT Telemetry Buffer Viewer
                 TelemetryLogViewer(
                     packets = telemetryLogs,
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Customer Robot Pairing Dialog
+            if (showPairingDialog) {
+                RobotPairingDialog(
+                    currentRobotId = robotId,
+                    savedRobots = savedRobots,
+                    onSelectRobot = viewModel::setRobotId,
+                    onDeleteRobot = viewModel::removeSavedRobot,
+                    onDismiss = { showPairingDialog = false }
+                )
             }
         }
     }

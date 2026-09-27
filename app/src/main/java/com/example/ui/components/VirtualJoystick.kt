@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -7,8 +10,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +23,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -26,6 +31,7 @@ import com.example.ui.theme.LumiCyan
 import com.example.ui.theme.LumiCyanBright
 import com.example.ui.theme.LumiCyanGlow
 import com.example.ui.theme.LumiEmerald
+import kotlinx.coroutines.launch
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -40,9 +46,29 @@ fun VirtualJoystick(
     onStart: (x: Int, y: Int) -> Unit,
     onEnd: () -> Unit
 ) {
-    var thumbOffsetX by remember { mutableFloatStateOf(0f) }
-    var thumbOffsetY by remember { mutableFloatStateOf(0f) }
-    var isDragging by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val thumbOffsetAnim = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    val density = LocalDensity.current
+    val textPx = with(density) { 11.dp.toPx() }
+
+    // Pre-allocated Paint for smooth 120fps rendering without GC allocations
+    val textPaint = remember(textPx) {
+        android.graphics.Paint().apply {
+            textSize = textPx
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.create(
+                android.graphics.Typeface.MONOSPACE,
+                android.graphics.Typeface.BOLD
+            )
+            isAntiAlias = true
+        }
+    }
+
+    val dashEffect = remember {
+        PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+    }
 
     Box(
         modifier = modifier
@@ -67,13 +93,22 @@ fun VirtualJoystick(
                         val clampedDist = distance.coerceAtMost(maxRadius)
                         val angle = atan2(dy, dx)
 
-                        thumbOffsetX = (cos(angle) * clampedDist)
-                        thumbOffsetY = (sin(angle) * clampedDist)
+                        val initialOffset = Offset(
+                            x = cos(angle) * clampedDist,
+                            y = sin(angle) * clampedDist
+                        )
+                        coroutineScope.launch {
+                            thumbOffsetAnim.snapTo(initialOffset)
+                        }
                         isDragging = true
 
-                        // Normalized vector: X is -100..100, Y is -100..100 (Up is +100)
-                        val normX = ((thumbOffsetX / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
-                        val normY = ((-thumbOffsetY / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
+                        // Deadband filter: within 3% radius treated as 0,0
+                        val normX = if (clampedDist < maxRadius * 0.03f) 0 else {
+                            ((initialOffset.x / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
+                        }
+                        val normY = if (clampedDist < maxRadius * 0.03f) 0 else {
+                            ((-initialOffset.y / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
+                        }
                         onStart(normX, normY)
 
                         var pointerId = down.id
@@ -81,10 +116,14 @@ fun VirtualJoystick(
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == pointerId }
                             if (change == null || !change.pressed) {
-                                // Released or canceled
-                                thumbOffsetX = 0f
-                                thumbOffsetY = 0f
+                                // Released - snap smoothly back to center with responsive spring
                                 isDragging = false
+                                coroutineScope.launch {
+                                    thumbOffsetAnim.animateTo(
+                                        targetValue = Offset.Zero,
+                                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 800f)
+                                    )
+                                }
                                 onEnd()
                                 break
                             }
@@ -95,27 +134,37 @@ fun VirtualJoystick(
                             val curClamped = curDist.coerceAtMost(maxRadius)
                             val curAngle = atan2(curDy, curDx)
 
-                            thumbOffsetX = (cos(curAngle) * curClamped)
-                            thumbOffsetY = (sin(curAngle) * curClamped)
+                            val updatedOffset = Offset(
+                                x = cos(curAngle) * curClamped,
+                                y = sin(curAngle) * curClamped
+                            )
+                            coroutineScope.launch {
+                                thumbOffsetAnim.snapTo(updatedOffset)
+                            }
 
-                            val updatedX = ((thumbOffsetX / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
-                            val updatedY = ((-thumbOffsetY / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
-                            onMove(updatedX, updatedY)
+                            val curNormX = if (curClamped < maxRadius * 0.03f) 0 else {
+                                ((updatedOffset.x / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
+                            }
+                            val curNormY = if (curClamped < maxRadius * 0.03f) 0 else {
+                                ((-updatedOffset.y / maxRadius) * 100).roundToInt().coerceIn(-100, 100)
+                            }
+                            onMove(curNormX, curNormY)
                             change.consume()
                         }
                     }
                 }
         ) {
-            val center = Offset(this.size.width / 2f, this.size.height / 2f)
-            val outerRadius = this.size.width / 2f - 12.dp.toPx()
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val outerRadius = size.width / 2f - 12.dp.toPx()
             val maxBoundRadius = outerRadius * 0.75f
             val thumbRadius = 34.dp.toPx()
+            val currentOffset = thumbOffsetAnim.value
 
-            // 1. Outer glow aura
+            // 1. Outer base glow aura
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        if (isDragging) LumiCyanGlow else Color(0x1A06B6D4),
+                        if (isDragging) LumiCyanGlow else Color(0x1506B6D4),
                         Color.Transparent
                     ),
                     center = center,
@@ -149,10 +198,7 @@ fun VirtualJoystick(
                 color = Color(0x3338BDF8),
                 radius = maxBoundRadius,
                 center = center,
-                style = Stroke(
-                    width = 1.2.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                )
+                style = Stroke(width = 1.2.dp.toPx(), pathEffect = dashEffect)
             )
 
             // 5. Crosshair grid lines
@@ -170,14 +216,7 @@ fun VirtualJoystick(
             )
 
             // 6. Directional Labels (FWD, REV, L, R)
-            val textPaint = android.graphics.Paint().apply {
-                color = if (isDragging) android.graphics.Color.WHITE else android.graphics.Color.LTGRAY
-                textSize = 11.dp.toPx()
-                textAlign = android.graphics.Paint.Align.CENTER
-                typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-                isAntiAlias = true
-            }
-
+            textPaint.color = if (isDragging) android.graphics.Color.WHITE else android.graphics.Color.LTGRAY
             drawContext.canvas.nativeCanvas.apply {
                 drawText("FWD", center.x, center.y - outerRadius + 22.dp.toPx(), textPaint)
                 drawText("REV", center.x, center.y + outerRadius - 12.dp.toPx(), textPaint)
@@ -186,8 +225,8 @@ fun VirtualJoystick(
             }
 
             // 7. Dynamic vector tracer line between center and thumbstick
-            val thumbCenter = Offset(center.x + thumbOffsetX, center.y + thumbOffsetY)
-            if (isDragging && (thumbOffsetX != 0f || thumbOffsetY != 0f)) {
+            val thumbCenter = Offset(center.x + currentOffset.x, center.y + currentOffset.y)
+            if (currentOffset.x != 0f || currentOffset.y != 0f) {
                 drawLine(
                     brush = Brush.linearGradient(
                         colors = listOf(LumiCyanGlow, LumiCyanBright),
@@ -201,7 +240,6 @@ fun VirtualJoystick(
             }
 
             // 8. Thumb Stick Handle
-            // Outer glow
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -215,7 +253,6 @@ fun VirtualJoystick(
                 center = thumbCenter
             )
 
-            // Thumbstick body gradient
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = if (isDragging) {
@@ -230,7 +267,6 @@ fun VirtualJoystick(
                 center = thumbCenter
             )
 
-            // Thumbstick stroke rim
             drawCircle(
                 color = if (isDragging) LumiCyanBright else Color(0xFF64748B),
                 radius = thumbRadius,
@@ -238,7 +274,6 @@ fun VirtualJoystick(
                 style = Stroke(width = 2.dp.toPx())
             )
 
-            // Tactile inner grip ring
             drawCircle(
                 color = if (isDragging) LumiEmerald else Color(0xFF94A3B8),
                 radius = thumbRadius * 0.45f,
@@ -246,7 +281,6 @@ fun VirtualJoystick(
                 style = Stroke(width = 1.5.dp.toPx())
             )
 
-            // Center glowing dot
             drawCircle(
                 color = if (isDragging) Color.White else Color(0xFF38BDF8),
                 radius = 4.dp.toPx(),

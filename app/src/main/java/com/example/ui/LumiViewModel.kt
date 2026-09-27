@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mqtt.LumiMqttClient
 import com.example.mqtt.MqttStatus
+import com.example.mqtt.RobotStatus
 import com.example.mqtt.TelemetryPacket
 import com.example.util.LumiFeedbackManager
 import kotlinx.coroutines.Job
@@ -34,9 +35,15 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
 
     val connectionStatus: StateFlow<MqttStatus> = mqttClient.status
     val latencyMs: StateFlow<Long?> = mqttClient.latencyMs
+    val robotStatus: StateFlow<RobotStatus> = mqttClient.robotStatus
 
     private val _robotId = MutableStateFlow(prefs.getString("robot_id", "LUMI-7042") ?: "LUMI-7042")
     val robotId: StateFlow<String> = _robotId.asStateFlow()
+
+    private val _savedRobots = MutableStateFlow<List<String>>(
+        prefs.getStringSet("saved_robots", setOf("LUMI-7042", "LUMI-TEST-1"))?.toList() ?: listOf("LUMI-7042")
+    )
+    val savedRobots: StateFlow<List<String>> = _savedRobots.asStateFlow()
 
     private val _isSoundMuted = MutableStateFlow(!feedback.isSoundEnabled)
     val isSoundMuted: StateFlow<Boolean> = _isSoundMuted.asStateFlow()
@@ -60,14 +67,37 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
                 _telemetryLogs.value = (listOf(packet) + _telemetryLogs.value).take(30)
             }
         }
-        // Connect to HiveMQ broker automatically
+        // Initialize target robot ID and connect
+        mqttClient.setTargetRobotId(_robotId.value)
         mqttClient.connect()
     }
 
     fun setRobotId(newId: String) {
         val sanitized = newId.trim().uppercase()
-        _robotId.value = sanitized
-        prefs.edit().putString("robot_id", sanitized).apply()
+        if (sanitized.isNotEmpty()) {
+            _robotId.value = sanitized
+            prefs.edit().putString("robot_id", sanitized).apply()
+            addRobotToSaved(sanitized)
+            mqttClient.setTargetRobotId(sanitized)
+            feedback.playBeep()
+        }
+    }
+
+    fun addRobotToSaved(id: String) {
+        val clean = id.trim().uppercase()
+        val current = _savedRobots.value.toMutableList()
+        if (!current.contains(clean)) {
+            current.add(0, clean)
+            _savedRobots.value = current
+            prefs.edit().putStringSet("saved_robots", current.toSet()).apply()
+        }
+    }
+
+    fun removeSavedRobot(id: String) {
+        val current = _savedRobots.value.toMutableList()
+        current.remove(id)
+        _savedRobots.value = current
+        prefs.edit().putStringSet("saved_robots", current.toSet()).apply()
     }
 
     fun reconnect() {
@@ -103,7 +133,6 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
         feedback.triggerHapticLight()
         isActivelyDriving = true
         updateVector(x, y)
-        // Immediate first packet
         sendDrivePacket()
         startDriveTicker()
     }
@@ -116,7 +145,6 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
         isActivelyDriving = false
         stopDriveTicker()
         updateVector(0, 0)
-        // Immediate zero stop packet
         sendDrivePacket()
         feedback.triggerHapticLight()
     }
@@ -127,7 +155,6 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
         isActivelyDriving = false
         stopDriveTicker()
         updateVector(0, 0)
-        // Send multiple stop packets for failsafe redundancy
         viewModelScope.launch {
             repeat(3) {
                 mqttClient.publish(_robotId.value, 0, 0)
@@ -191,7 +218,6 @@ class LumiViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        // Fail-safe cleanup
         emergencyStop()
         mqttClient.disconnect()
         feedback.release()
