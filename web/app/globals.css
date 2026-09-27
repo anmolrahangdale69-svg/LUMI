@@ -2,9 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
+@layer base {
+  :root {
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    --cyber-grid: rgba(56, 189, 248, 0.04);
+  }
+
+  body {
+    background-color: #030712;
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(14, 165, 233, 0.15), transparent 45%),
+      radial-gradient(circle at 100% 100%, rgba(99, 102, 241, 0.08), transparent 40%),
+      linear-gradient(to right, var(--cyber-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--cyber-grid) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    background-attachment: fixed;
+  }
+}
+
+/* Custom glowing pulse animations */
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 0.8; filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.4)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.8)); }
+}
+
+.radar-spinner {
+  animation: radar-sweep 4s linear infinite;
+}
+
+.neon-glow {
+  animation: neon-pulse 3s ease-in-out infinite;
+}
+
+/* Glass card styles */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-panel-glow {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.15), inset 0 1px 0 0 rgba(56, 189, 248, 0.1);
 }
