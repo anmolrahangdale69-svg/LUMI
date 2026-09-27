@@ -1,8 +1,16 @@
 {
-  "name": "lumi-robot-controller",
+  "name": "lumi-monorepo",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
-    "build": "echo 'Android and Vercel build script ready'"
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix web run start"
+  },
+  "dependencies": {
+    "next": "14.2.24"
   }
 }
