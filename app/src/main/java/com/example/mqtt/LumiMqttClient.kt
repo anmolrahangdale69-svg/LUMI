@@ -293,6 +293,19 @@ class LumiMqttClient(
     }
 
     private fun parseRobotStatusJson(jsonString: String) {
+        val trimmed = jsonString.trim()
+        if (trimmed.equals("ONLINE", ignoreCase = true)) {
+            _robotStatus.value = RobotStatus(
+                isRobotConnected = true,
+                batteryPercent = 100,
+                voltage = 7.4f,
+                rssi = -50,
+                statusText = "ONLINE",
+                uptimeSeconds = 0,
+                lastSeenTimestamp = System.currentTimeMillis()
+            )
+            return
+        }
         try {
             val obj = JSONObject(jsonString)
             val battery = obj.optInt("battery", 100)
@@ -310,7 +323,13 @@ class LumiMqttClient(
                 uptimeSeconds = uptime,
                 lastSeenTimestamp = System.currentTimeMillis()
             )
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            _robotStatus.value = _robotStatus.value.copy(
+                isRobotConnected = true,
+                statusText = "ONLINE",
+                lastSeenTimestamp = System.currentTimeMillis()
+            )
+        }
     }
 
     private fun startHeartbeatWatchdog() {

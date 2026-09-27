@@ -237,17 +237,28 @@ export default function LumiController() {
 
     client.on("message", (topic, message) => {
       if (topic.includes("status")) {
-        try {
-          const parsed = JSON.parse(message.toString());
+        const msgStr = message.toString().trim();
+        if (msgStr.toUpperCase() === "ONLINE") {
           setRobotStatus({
             online: true,
-            battery: parsed.battery,
-            rssi: parsed.rssi,
-            uptime: parsed.uptime,
             lastSeen: Date.now(),
           });
-        } catch {
-          // ignore non-json
+        } else {
+          try {
+            const parsed = JSON.parse(msgStr);
+            setRobotStatus({
+              online: true,
+              battery: parsed.battery,
+              rssi: parsed.rssi,
+              uptime: parsed.uptime,
+              lastSeen: Date.now(),
+            });
+          } catch {
+            setRobotStatus({
+              online: true,
+              lastSeen: Date.now(),
+            });
+          }
         }
       }
     });
