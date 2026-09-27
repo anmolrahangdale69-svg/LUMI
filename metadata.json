@@ -1,0 +1,6 @@
+{
+  "name": "Lumi Robot",
+  "description": "Mobile-first differential drive robot controller with real-time MQTT telemetry and dual-ring vector joystick.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
